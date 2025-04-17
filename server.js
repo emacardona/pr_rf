@@ -172,11 +172,13 @@ app.post('/register-entry', (req, res) => {
     const { usuarioId, empresaId } = req.body;
     const query = `
         INSERT INTO registro (usuario_id, empresa_id, hora_entrada)
-        SELECT ?, ?, CONVERT_TZ(NOW(), @@global.time_zone, 'America/Bogota')
+        SELECT ?, ?, CONVERT_TZ(NOW(), '+00:00', 'America/Guatemala')
         FROM DUAL
         WHERE NOT EXISTS (
             SELECT 1 FROM registro
-            WHERE usuario_id = ? AND empresa_id = ? AND DATE(hora_entrada) = CURDATE()
+            WHERE usuario_id = ?
+              AND empresa_id = ?
+              AND DATE(hora_entrada) = CURDATE()
         )
     `;
     db.query(query, [usuarioId, empresaId, usuarioId, empresaId], (err, results) => {
@@ -198,8 +200,11 @@ app.post('/register-exit', (req, res) => {
     const { usuarioId, empresaId } = req.body;
     const query = `
         UPDATE registro
-        SET hora_salida = CONVERT_TZ(NOW(), @@global.time_zone, 'America/Bogota')
-        WHERE usuario_id = ? AND empresa_id = ? AND DATE(hora_entrada) = CURDATE()
+        SET hora_salida = CONVERT_TZ(NOW(), @@global.time_zone, 'America/Guatemala')
+        WHERE usuario_id = ?
+          AND empresa_id = ?
+          AND DATE(hora_entrada) = CURDATE()
+          AND hora_salida IS NULL
     `;
     db.query(query, [usuarioId, empresaId], (err, results) => {
         if (err) {

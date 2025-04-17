@@ -135,33 +135,68 @@ async function startCamera() {
         updateCanvasSize();
         window.addEventListener('resize', updateCanvasSize);
 
+        let previousBox = null;
+        let stillFrames = 0;
+        let noBlinkFrames = 0;
+
+        function getEyeAspectRatio(eye) {
+            const A = faceapi.euclideanDistance(eye[1], eye[5]);
+            const B = faceapi.euclideanDistance(eye[2], eye[4]);
+            const C = faceapi.euclideanDistance(eye[0], eye[3]);
+            return (A + B) / (2.0 * C);
+        }
+
+        function isBlinking(landmarks) {
+            const leftEye = landmarks.getLeftEye();
+            const rightEye = landmarks.getRightEye();
+            const leftEAR = getEyeAspectRatio(leftEye);
+            const rightEAR = getEyeAspectRatio(rightEye);
+            const EAR = (leftEAR + rightEAR) / 2.0;
+            return EAR < 0.25;
+        }
+
+
         setInterval(async () => {
             const detections = await faceapi.detectAllFaces(video)
                 .withFaceLandmarks()
                 .withFaceDescriptors();
 
-// Revisa si la detección es estable (sin movimiento = posible imagen)
-            if (detections.length > 0 && previousDetections.length > 0) {
+            if (detections.length > 0) {
                 const currentBox = detections[0].detection.box;
-                const prevBox = previousDetections[0].detection.box;
 
-                const deltaX = Math.abs(currentBox.x - prevBox.x);
-                const deltaY = Math.abs(currentBox.y - prevBox.y);
+                // Detección de movimiento
+                if (previousBox) {
+                    const deltaX = Math.abs(currentBox.x - previousBox.x);
+                    const deltaY = Math.abs(currentBox.y - previousBox.y);
+                    const movementThreshold = 0.8;
 
-                const movementThreshold = 2; // Cambia esto si es muy estricto o permisivo
+                    if (deltaX < movementThreshold && deltaY < movementThreshold) {
+                        stillFrames++;
+                    } else {
+                        stillFrames = 0;
+                    }
+                }
+                previousBox = currentBox;
 
-                if (deltaX < movementThreshold && deltaY < movementThreshold) {
-                    notifyUser("Por favor mueve un poco tu rostro para verificar que no es una imagen.", true);
-                    return; // Salir del ciclo y no hacer reconocimiento
+                // Detección de parpadeo
+                const blinkDetected = isBlinking(detections[0].landmarks);
+                if (!blinkDetected) {
+                    noBlinkFrames++;
+                } else {
+                    noBlinkFrames = 0;
+                }
+
+                // 🚨 Validación combinada
+                if (stillFrames >= 1 && noBlinkFrames >= 3) {
+                    notifyUser("No hay parpadeo ni movimiento facial, posible imagen o pantalla.", true);
+                    return;
                 }
             }
-
-            previousDetections = detections; // Actualizar la detección anterior
 
 
             const displaySize = { width: video.clientWidth, height: video.clientHeight };
             const resizedDetections = faceapi.resizeResults(detections, displaySize);
-            
+
             canvas.getContext('2d').clearRect(0, 0, canvas.width, canvas.height);
             faceapi.draw.drawDetections(canvas, resizedDetections);
             faceapi.draw.drawFaceLandmarks(canvas, resizedDetections);
@@ -184,7 +219,7 @@ async function startCamera() {
                         if (userId) {
                             const now = new Date();
                             let registerStatus;
-                            if (now.getHours() < 11 || (now.getHours() === 11 && now.getMinutes() < 30)) {
+                            if (now.getHours() < 14 || (now.getHours() === 14 && now.getMinutes() < 30)) {
                                 registerStatus = await registerEntry(userId);
                             } else {
                                 registerStatus = await registerExit(userId);
@@ -206,7 +241,7 @@ function showCustomAlert(message) {
     const alertBox = document.getElementById('custom-alert');
     alertBox.textContent = message;
     alertBox.style.display = 'block'; // Mostrar el alert
-    
+
     // Ocultar el alert después de 3 segundos
     setTimeout(() => {
         alertBox.style.display = 'none';
@@ -236,7 +271,7 @@ function showCustomAlert(message) {
     const alertBox = document.getElementById('custom-alert');
     alertBox.textContent = message;
     alertBox.style.display = 'block'; // Mostrar el alert
-    
+
     // Ocultar el alert después de 3 segundos
     setTimeout(() => {
         alertBox.style.display = 'none';
@@ -246,6 +281,7 @@ function showCustomAlert(message) {
 // Función para registrar la entrada
 async function registerEntry(userId) {
     const localDate = new Date(); // Hora local del cliente
+
     try {
         // Verificar si ya hay una entrada registrada para hoy
         const checkResponse = await fetch(`/check-entry?usuarioId=${userId}&empresaId=${selectedEmpresaId}`);
@@ -268,9 +304,10 @@ async function registerEntry(userId) {
                 hora_entrada: localDate.toISOString() // Enviar la hora local en formato ISO
             })
         });
+
         if (response.ok) {
             notifyUser('Entrada registrada exitosamente.');
-            showCustomAlert('Entrada registrada exitosamente.'); // Mostrar el alert personalizado
+            showCustomAlert('Entrada registrada exitosamente.');
             return true;
         } else if (response.status === 409) {
             notifyUser('Ya se ha registrado una entrada para hoy.', true);
@@ -281,8 +318,10 @@ async function registerEntry(userId) {
         console.error('Error de red al registrar la entrada:', error);
         notifyUser('Error al conectar con el servidor.', true);
     }
+
     return false;
 }
+
 
 // Función para registrar la salida
 async function registerExit(userId) {
@@ -365,13 +404,13 @@ document.getElementById('selectEmpresa').addEventListener('click', async functio
         console.error("Debe seleccionar una empresa");
         return;
     }
-    
+
     await loadModels(); // Cargar los modelos
     await loadLabeledImagesAsync(); // Cargar los descriptores de usuarios de forma asíncrona
     console.log("Descriptores cargados:", labeledFaceDescriptors);
-    
+
     // Mostrar contenido principal y ocultar el formulario de selección
-    document.getElementById('main-content').style.display = 'block'; 
+    document.getElementById('main-content').style.display = 'block';
     hideEmpresaForm();
 });
 
@@ -445,9 +484,3 @@ document.getElementById('user-form').addEventListener('submit', async function(e
         submitButton.disabled = false;
     }
 });
-
-
-
-
-
-
