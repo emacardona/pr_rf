@@ -172,7 +172,7 @@ app.post('/register-entry', (req, res) => {
     const { usuarioId, empresaId } = req.body;
     const query = `
         INSERT INTO registro (usuario_id, empresa_id, hora_entrada)
-        SELECT ?, ?, CONVERT_TZ(NOW(), '+00:00', 'America/Guatemala')
+        SELECT ?, ?, NOW()
         FROM DUAL
         WHERE NOT EXISTS (
             SELECT 1 FROM registro
@@ -200,7 +200,7 @@ app.post('/register-exit', (req, res) => {
     const { usuarioId, empresaId } = req.body;
     const query = `
         UPDATE registro
-        SET hora_salida = CONVERT_TZ(NOW(), @@global.time_zone, 'America/Guatemala')
+        SET hora_salida = NOW()
         WHERE usuario_id = ?
           AND empresa_id = ?
           AND DATE(hora_entrada) = CURDATE()

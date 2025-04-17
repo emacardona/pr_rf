@@ -219,7 +219,7 @@ async function startCamera() {
                         if (userId) {
                             const now = new Date();
                             let registerStatus;
-                            if (now.getHours() < 14 || (now.getHours() === 14 && now.getMinutes() < 30)) {
+                            if (now.getHours() < 20 || (now.getHours() === 20 && now.getMinutes() < 30)) {
                                 registerStatus = await registerEntry(userId);
                             } else {
                                 registerStatus = await registerExit(userId);
