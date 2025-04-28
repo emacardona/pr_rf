@@ -95,6 +95,22 @@ async function processBatch(batch) {
     );
 }
 
+function capturePhoto(videoElement) {
+    const canvas = document.createElement('canvas');
+    // Redimensionamos la imagen capturada a un tamaño pequeño:
+    canvas.width = 200; // por ejemplo 200 píxeles
+    canvas.height = 200;
+    const ctx = canvas.getContext('2d');
+
+    // Redibujamos la imagen del video en el canvas reducido
+    ctx.drawImage(videoElement, 0, 0, canvas.width, canvas.height);
+
+    // Exportamos como JPEG de baja calidad (opcionalmente puedes bajar calidad)
+    return canvas.toDataURL('image/jpeg', 0.7); // calidad 70%
+}
+
+
+
 // Función para activar la cámara y realizar el reconocimiento facial
 async function startCamera() {
     if (!modelsLoaded) {
@@ -211,25 +227,27 @@ async function startCamera() {
                     drawBox.draw(canvas);
 
                     if (result.label === 'unknown') {
-                        // Si el usuario no es encontrado, mostrar el mensaje de "Usuario no encontrado"
-                        notifyUser('Usuario no encontrado', true); // true para mostrarlo como un error
+                        notifyUser('Usuario no encontrado', true);
                     } else if (result.distance < 0.5) {
-                        // Si el usuario es identificado correctamente
                         const userId = await getUserIdByName(result.label);
                         if (userId) {
                             const now = new Date();
+                            const photoBase64 = capturePhoto(video); // Capturamos la imagen actual
+
                             let registerStatus;
                             if (now.getHours() < 20 || (now.getHours() === 20 && now.getMinutes() < 30)) {
-                                registerStatus = await registerEntry(userId);
+                                registerStatus = await registerEntry(userId, photoBase64);
                             } else {
                                 registerStatus = await registerExit(userId);
                             }
+
                             if (registerStatus) {
                                 notifyUser(`Usuario ${result.label} registrado exitosamente`);
-                                showCustomAlert(`Registro de ${result.label} exitoso`); // Mostrar el alert personalizado
+                                showCustomAlert(`Registro de ${result.label} exitoso`);
                             }
                         }
                     }
+
                 }
             }
         }, 1000); // Intervalo ajustado a 1000 ms
@@ -279,20 +297,12 @@ function showCustomAlert(message) {
 }
 
 // Función para registrar la entrada
-async function registerEntry(userId) {
+async function registerEntry(userId, photoBase64) {
     const localDate = new Date(); // Hora local del cliente
+    const ubicacion = "Zona común"; // Puedes cambiar aquí tu ubicación
+    const resultado_autenticacion = "Exitosa"; // Siempre será exitosa si llegó aquí
 
     try {
-        // Verificar si ya hay una entrada registrada para hoy
-        const checkResponse = await fetch(`/check-entry?usuarioId=${userId}&empresaId=${selectedEmpresaId}`);
-        if (checkResponse.ok) {
-            const result = await checkResponse.json();
-            if (result.entryExists) {
-                notifyUser('Ya se ha registrado una entrada para este usuario hoy.');
-                return false;
-            }
-        }
-
         const response = await fetch('/register-entry', {
             method: 'POST',
             headers: {
@@ -301,7 +311,10 @@ async function registerEntry(userId) {
             body: JSON.stringify({
                 usuarioId: userId,
                 empresaId: selectedEmpresaId,
-                hora_entrada: localDate.toISOString() // Enviar la hora local en formato ISO
+                hora_entrada: localDate.toISOString(), // Mandamos la hora
+                ubicacion: ubicacion, // Mandamos ubicación
+                resultado_autenticacion: resultado_autenticacion, // Mandamos resultado
+                foto_intento: photoBase64 // Mandamos foto
             })
         });
 
@@ -321,6 +334,8 @@ async function registerEntry(userId) {
 
     return false;
 }
+
+
 
 
 // Función para registrar la salida

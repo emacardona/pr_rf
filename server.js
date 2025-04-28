@@ -37,6 +37,8 @@ app.get('/get-empresas', (req, res) => {
     });
 });
 
+
+
 // Ruta para verificar si ya hay una entrada registrada para hoy
 app.get('/check-entry', (req, res) => {
     const { usuarioId, empresaId } = req.query;
@@ -169,10 +171,15 @@ app.get('/get-user-id', (req, res) => {
 
 // Ruta para registrar entrada
 app.post('/register-entry', (req, res) => {
-    const { usuarioId, empresaId } = req.body;
-    const query = `
-        INSERT INTO registro (usuario_id, empresa_id, hora_entrada)
-        SELECT ?, ?, NOW()
+    const { usuarioId, empresaId, ubicacion, resultado_autenticacion, foto_intento } = req.body;
+    const imageBuffer = foto_intento
+        ? Buffer.from(foto_intento.split(',')[1], 'base64')
+        : null;
+
+    const q = `
+        INSERT INTO registro
+        (usuario_id, empresa_id, hora_entrada, ubicacion, resultado_autenticacion, foto_intento)
+        SELECT ?, ?, NOW(), ?, ?, ?
         FROM DUAL
         WHERE NOT EXISTS (
             SELECT 1 FROM registro
@@ -181,163 +188,56 @@ app.post('/register-entry', (req, res) => {
               AND DATE(hora_entrada) = CURDATE()
         )
     `;
-    db.query(query, [usuarioId, empresaId, usuarioId, empresaId], (err, results) => {
+    const params = [
+        usuarioId,
+        empresaId,
+        ubicacion,
+        resultado_autenticacion,
+        imageBuffer,
+        usuarioId,
+        empresaId
+    ];
+
+    db.query(q, params, (err, results) => {
         if (err) {
-            console.error("Error al registrar la entrada: ", err);
-            res.status(500).send('Error al registrar la entrada');
-            return;
+            console.error("Error al registrar la entrada:", err);
+            return res.status(500).send("Error al registrar la entrada");
         }
         if (results.affectedRows === 0) {
-            res.status(409).send('Entrada ya registrada');
-        } else {
-            res.send('Entrada registrada exitosamente');
+            return res.status(409).send("Ya hay una entrada registrada para este usuario hoy.");
         }
+        res.send("Entrada registrada exitosamente");
     });
 });
+
+
+
+
+
+
 
 // Ruta para registrar salida
 app.post('/register-exit', (req, res) => {
     const { usuarioId, empresaId } = req.body;
-    const query = `
-        UPDATE registro
-        SET hora_salida = NOW()
-        WHERE usuario_id = ?
-          AND empresa_id = ?
-          AND DATE(hora_entrada) = CURDATE()
-          AND hora_salida IS NULL
-    `;
-    db.query(query, [usuarioId, empresaId], (err, results) => {
+    const q = `
+    UPDATE registro
+    SET hora_salida = NOW()
+    WHERE usuario_id = ? 
+      AND empresa_id = ? 
+      AND DATE(hora_entrada) = CURDATE() 
+      AND hora_salida IS NULL
+  `;
+    db.query(q, [usuarioId, empresaId], (err, results) => {
         if (err) {
-            console.error("Error al registrar la salida: ", err);
-            res.status(500).send('Error al registrar la salida');
-            return;
+            console.error("Error al registrar la salida:", err);
+            return res.status(500).send("Error al registrar la salida");
         }
         if (results.affectedRows === 0) {
-            res.status(409).send('No se encontró una entrada para registrar la salida');
-        } else {
-            res.send('Salida registrada exitosamente');
+            return res.status(409).send("No se encontró una entrada válida para registrar la salida");
         }
+        res.send("Salida registrada exitosamente");
     });
 });
-
-
-// Ruta para obtener los nombres de los usuarios sin paginación
-app.get('/get-labels', (req, res) => {
-    const empresaId = req.query.empresaId;
-
-    const dataQuery = "SELECT nombre FROM tabla_usuarios WHERE codigo_empresa = ?";
-
-    db.query(dataQuery, [empresaId], (err, rows) => {
-        if (err) {
-            res.status(500).send('Error leyendo la base de datos');
-            return;
-        }
-
-        const labels = rows.map(row => row.nombre);
-        res.json({ labels, totalUsers: labels.length });
-    });
-});
-
-// Ruta para obtener la imagen de un usuario
-app.get('/get-image', (req, res) => {
-    const name = req.query.name;
-    const empresaId = req.query.empresaId;
-    const query = "SELECT imagen FROM tabla_usuarios WHERE nombre = ? AND codigo_empresa = ?";
-    db.query(query, [name, empresaId], (err, results) => {
-        if (err || results.length === 0) {
-            res.status(404).send('Imagen no encontrada');
-            return;
-        }
-        res.setHeader('Content-Type', 'image/jpeg');
-        res.send(results[0].imagen);
-    });
-});
-
-// Ruta para obtener los usuarios filtrados por empresa
-app.get('/get-users', (req, res) => {
-    const empresaId = req.query.empresaId;
-    const query = "SELECT * FROM tabla_usuarios WHERE codigo_empresa = ?";
-    db.query(query, [empresaId], (err, rows) => {
-        if (err) {
-            res.status(500).send('Error leyendo la base de datos');
-            return;
-        }
-        res.json(rows);
-    });
-});
-
-// Ruta para obtener el ID del usuario basado en el nombre y la empresa
-app.get('/get-user-id', (req, res) => {
-    const { name, empresaId } = req.query;
-    const query = "SELECT id FROM tabla_usuarios WHERE nombre = ? AND codigo_empresa = ?";
-    db.query(query, [name, empresaId], (err, results) => {
-        if (err) {
-            console.error("Error al obtener el ID del usuario: ", err);
-            res.status(500).send('Error al obtener el ID del usuario');
-            return;
-        }
-        if (results.length === 0) {
-            res.status(404).send('Usuario no encontrado');
-            return;
-        }
-        res.json({ id: results[0].id });
-    });
-});
-
-// Registrar entrada usando la hora enviada desde el cliente
-app.post('/register-entry', (req, res) => {
-    const { usuarioId, empresaId, hora_entrada } = req.body; // Recibe la hora local en formato ISO
-    const query = `
-        INSERT INTO registro (usuario_id, empresa_id, hora_entrada)
-        SELECT ?, ?, ?
-        FROM DUAL
-        WHERE NOT EXISTS (
-            SELECT 1 FROM registro
-            WHERE usuario_id = ? AND empresa_id = ? AND DATE(hora_entrada) = CURDATE()
-        )
-    `;
-    db.query(query, [usuarioId, empresaId, hora_entrada, usuarioId, empresaId], (err, results) => {
-        if (err) {
-            console.error("Error al registrar la entrada: ", err);
-            res.status(500).send('Error al registrar la entrada');
-            return;
-        }
-        if (results.affectedRows === 0) {
-            res.status(409).send('Entrada ya registrada');
-        } else {
-            res.send('Entrada registrada exitosamente');
-        }
-    });
-});
-
-// Ruta para registrar salida
-app.post('/register-exit', (req, res) => {
-    const { usuarioId, empresaId, hora_salida } = req.body; // Recibe la hora local desde el cliente en formato ISO
-
-    // Comprobamos que existe una entrada registrada para el día actual y el usuario
-    const query = `
-        UPDATE registro
-        SET hora_salida = ?
-        WHERE usuario_id = ? 
-        AND empresa_id = ? 
-        AND DATE(hora_entrada) = CURDATE() 
-        AND hora_salida IS NULL
-    `;
-
-    db.query(query, [hora_salida, usuarioId, empresaId], (err, results) => {
-        if (err) {
-            console.error("Error al registrar la salida: ", err);
-            res.status(500).send('Error al registrar la salida');
-            return;
-        }
-        if (results.affectedRows === 0) {
-            res.status(409).send('No se encontró una entrada válida para registrar la salida');
-        } else {
-            res.send('Salida registrada exitosamente');
-        }
-    });
-});
-
 
 
 
